@@ -156,11 +156,9 @@ main:
 
             cvtsi2ss xmm0, r14 ; convert to float
 
-            movss xmm1, dword [delta]
-            mulss xmm0, xmm1
-            movss xmm1, dword [speed]
-            mulss xmm0, xmm1
-            movss dword [velocity], xmm0
+            mulss xmm0, [delta]
+            mulss xmm0, [speed]
+            movss [velocity], xmm0
 
             mov rcx, 74 ; sfKeyDown
             call sfKeyboard_isKeyPressed
@@ -172,10 +170,8 @@ main:
 
             cvtsi2ss xmm0, r14 ; convert to float
 
-            movss xmm1, [delta]
-            mulss xmm0, xmm1
-            movss xmm1, [speed]
-            mulss xmm0, xmm1
+            mulss xmm0, [delta]
+            mulss xmm0, [speed]
             movss [velocity + 4], xmm0
 
 
