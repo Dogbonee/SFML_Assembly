@@ -5,16 +5,25 @@ section .data
 
     delta dd 0.0
     speed dd 400.0
-    rectPos dd 200.0, 200.0  ; Initialize the structure
-    rectSize dd 100.0, 100.0
-    velocity dd 0.0, 0.0
+    playerOnePos dd 0.0, 200.0
+    playerTwoPos dd 1550.0, 200.0
+    rectSize dd 50.0, 250.0
+    ballSize dd 20.0, 20.0
+    velocityOne dd 0.0, 0.0
+    velocityTwo dd 0.0, 0.0
+    ballVelocity dd 100.0, 100.0
+    ballCurrentVelocity dd 1.0, 1.0
     successMsg db "Exited with no errors!", 10, 0
     windowTitle db "SFML in Assembly!", 0
-    fmt db "%d", 10
+    windowCenter dd 790.0, 440.0 ; offset by ballsize/2 because i dont want to set origin
+    fmt db "%f", 10
 
 
 section .bss
-    clock resb 32
+    clock resb 8
+    playerOne resb 16
+    playerTwo resb 16
+    ball resb 16
 
 section .text
 global main
@@ -50,7 +59,146 @@ extern sfKeyboard_isKeyPressed
     pop rcx
 %endmacro
 
+moveBall:
+    sub rsp, 8
+    movss xmm0, [ballVelocity]
+    mulss xmm0, [delta]
+    movss [ballCurrentVelocity], xmm0
+    movss xmm0, [ballVelocity + 4]
+    mulss xmm0, [delta]
 
+    movss [ballCurrentVelocity + 4], xmm0
+
+
+
+    mov rcx, [ball]
+    mov rdx, [ballCurrentVelocity]
+    call sfRectangleShape_move
+    add rsp, 8
+    ret
+
+
+movePaddles:
+    sub rsp, 8 ; align stack
+    ;calculate velocity
+    mov rcx, 17 ; sfKeyR
+    call sfKeyboard_isKeyPressed
+    mov r14, rax
+
+    mov rcx, 22 ; sfKeyW
+    call sfKeyboard_isKeyPressed
+    sub r14, rax
+
+    cvtsi2ss xmm0, r14 ; convert to float
+
+    mulss xmm0, [delta]
+    mulss xmm0, [speed]
+    movss [velocityOne + 4], xmm0
+
+    mov rcx, 74 ; sfKeyDown
+    call sfKeyboard_isKeyPressed
+    mov r14, rax
+
+    mov rcx, 73 ; sfKeyUp
+    call sfKeyboard_isKeyPressed
+    sub r14, rax
+
+    cvtsi2ss xmm0, r14 ; convert to float
+
+    mulss xmm0, [delta]
+    mulss xmm0, [speed]
+    movss [velocityTwo + 4], xmm0
+
+    checkPlayerOne:
+    movss xmm0, dword [playerOnePos + 4]
+    movss xmm1, dword [velocityOne + 4]
+    addss xmm0, xmm1
+    cvtss2si rax, xmm0
+    cmp rax, 0
+    jl checkPlayerTwo
+
+    movss xmm0, dword [playerOnePos + 4]
+    movss xmm1, dword [velocityOne + 4]
+    addss xmm0, xmm1
+    cvtss2si rax, xmm0
+    cmp rax, 650
+    jg checkPlayerTwo
+    call movePlayerOne
+
+    checkPlayerTwo:
+    movss xmm0, dword [playerTwoPos + 4]
+    movss xmm1, dword [velocityTwo + 4]
+    addss xmm0, xmm1
+    cvtss2si rax, xmm0
+    cmp rax, 0
+    jl endMove
+
+    movss xmm0, dword [playerTwoPos + 4]
+    movss xmm1, dword [velocityTwo + 4]
+    addss xmm0, xmm1
+    cvtss2si rax, xmm0
+    cmp rax, 650
+    jg endMove
+    call movePlayerTwo
+    jmp endMove
+
+    movePlayerOne:
+    ; move rectangle
+    mov rcx, [playerOne]
+    mov rdx, [velocityOne]
+    call sfRectangleShape_move
+
+    movss xmm0, [velocityOne + 4]
+    movss xmm1, [playerOnePos + 4]
+    addss xmm1, xmm0
+    movss [playerOnePos + 4], xmm1
+    ret
+
+    movePlayerTwo:
+    mov rcx, [playerTwo]
+    mov rdx, [velocityTwo]
+    call sfRectangleShape_move
+
+    movss xmm0, [velocityTwo + 4]
+    movss xmm1, [playerTwoPos + 4]
+    addss xmm1, xmm0
+    movss [playerTwoPos + 4], xmm1
+    ret
+
+
+    endMove:
+    add rsp, 8 ; restore stack position
+    ret
+
+
+render:
+    sub rsp, 8 ; align the stack
+    ; Clear the window
+    lea rcx, [rbx]
+    mov rdx, 0x4B9CD300
+    call sfRenderWindow_clear
+
+    ; Draw the rectangle
+    lea rcx, [rbx]
+    mov rdx, [playerOne]
+    mov r8, 0
+    call sfRenderWindow_drawRectangleShape
+
+    lea rcx, [rbx]
+    mov rdx, [playerTwo]
+    mov r8, 0
+    call sfRenderWindow_drawRectangleShape
+
+    lea rcx, [rbx]
+    mov rdx, [ball]
+    mov r8, 0
+    call sfRenderWindow_drawRectangleShape
+
+    ; Display the window
+    lea rcx, [rbx]
+    call sfRenderWindow_display
+    add rsp, 8 ; restore stack position
+    ret
 
 main:
     ; For future reference: C functions are called by passing the arguments
@@ -69,8 +217,8 @@ main:
 
     sub rsp, 16; allocate 16 bytes on the stack for videomode
 
-    mov dword [rsp], 800 ; width
-    mov dword [rsp + 4], 600 ; height
+    mov dword [rsp], 1600 ; width
+    mov dword [rsp + 4],900 ; height
     mov dword [rsp + 8], 32 ; bits per pixel
 
     ; Registers for sfRenderWindow_create call
@@ -84,25 +232,39 @@ main:
 
     mov rbx, rax ; rbx is in charge of storing the window.
 
-    ; Create rectangle
+    ; Create playerOne and playerTwo
     call sfRectangleShape_create
-    ; rectangle struct pointer now in rax
-    lea r15, [rax]
-
-    ; Set fill color to red
-    lea rcx, [r15]
-    mov rdx, 0xFF0000FF
-    call sfRectangleShape_setFillColor
+    mov [playerOne], rax
+    call sfRectangleShape_create
+    mov [playerTwo], rax
+    call sfRectangleShape_create
+    mov [ball], rax
 
 
     ; set size to (200, 200)
-    lea rcx, [r15]
+    mov rcx, [playerOne]
     mov rdx, [rectSize]
     call sfRectangleShape_setSize
 
+    mov rcx, [playerTwo]
+    mov rdx, [rectSize]
+    call sfRectangleShape_setSize
+
+    mov rcx, [ball]
+    mov rdx, [ballSize]
+    call sfRectangleShape_setSize
+
     ; set position to (200, 200)
-    lea rcx, [r15]
-    mov rdx, [rectPos]
+    mov rcx, [playerOne]
+    mov rdx, [playerOnePos]
+    call sfRectangleShape_setPosition
+
+    mov rcx, [playerTwo]
+    mov rdx, [playerTwoPos]
+    call sfRectangleShape_setPosition
+
+    mov rcx, [ball]
+    mov rdx, [windowCenter]
     call sfRectangleShape_setPosition
 
     call sfClock_create
@@ -144,61 +306,9 @@ main:
             call sfTime_asSeconds
             movss [delta], xmm0
 
-            ;calculate velocity
-
-            mov rcx, 72 ; sfKeyRight
-            call sfKeyboard_isKeyPressed
-            mov r14, rax
-
-            mov rcx, 71 ; sfKeyLeft
-            call sfKeyboard_isKeyPressed
-            sub r14, rax
-
-            cvtsi2ss xmm0, r14 ; convert to float
-
-            movss xmm1, dword [delta]
-            mulss xmm0, xmm1
-            movss xmm1, dword [speed]
-            mulss xmm0, xmm1
-            movss dword [velocity], xmm0
-
-            mov rcx, 74 ; sfKeyDown
-            call sfKeyboard_isKeyPressed
-            mov r14, rax
-
-            mov rcx, 73 ; sfKeyUp
-            call sfKeyboard_isKeyPressed
-            sub r14, rax
-
-            cvtsi2ss xmm0, r14 ; convert to float
-
-            movss xmm1, [delta]
-            mulss xmm0, xmm1
-            movss xmm1, [speed]
-            mulss xmm0, xmm1
-            movss [velocity + 4], xmm0
-
-
-            ; move rectangle
-            mov rcx, r15
-            mov rdx, [velocity]
-            call sfRectangleShape_move
-
-            ; Clear the window
-            lea rcx, [rbx]
-            mov rdx, 0x0000FF00
-            call sfRenderWindow_clear
-
-            ; Draw the rectangle
-            lea rcx, [rbx]
-            lea rdx, [r15]
-            mov r8, 0
-            call sfRenderWindow_drawRectangleShape
-
-            ; Display the window
-            lea rcx, [rbx]
-            call sfRenderWindow_display
-
+            call movePaddles
+            call moveBall
+            call render
 
             ; Check if the window is open and redo the loop if it is
             lea rcx, [rbx]
