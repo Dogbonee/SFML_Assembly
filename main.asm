@@ -2,11 +2,19 @@ bits 64
 default rel
 
 section .data
-    rect: dd 200.0, 200.0  ; Initialize the structure
+
+    delta dd 0.0
+    speed dd 400.0
+    rectPos dd 200.0, 200.0  ; Initialize the structure
+    rectSize dd 100.0, 100.0
+    velocity dd 0.0, 0.0
     successMsg db "Exited with no errors!", 10, 0
     windowTitle db "SFML in Assembly!", 0
-    fmt db "%f"
+    fmt db "%d", 10
 
+
+section .bss
+    clock resb 32
 
 section .text
 global main
@@ -25,6 +33,12 @@ extern sfRectangleShape_create ; void
 extern sfRectangleShape_setSize ; rectangle, sfVector2f
 extern sfRectangleShape_setFillColor ; rectangle, sfColor
 extern sfRectangleShape_setPosition ; rectangle, sfVector2f
+extern sfRectangleShape_move
+extern sfClock_create
+extern sfClock_restart
+extern sfTime_asSeconds
+extern sfKeyboard_isKeyPressed
+
 
 
 %macro PRINT 1
@@ -46,6 +60,8 @@ main:
     ; Useful sizes to know: Videomode struct is 12 bytes, sfVector2f is 8 bytes, sfEvent is a maximum 28 bytes (union)
     ; To create a Vector2f struct allocate the values in the data section and modify as needed, then pass directly to register
     ; Don't try to use floating point registers to create a sfVector2f on the fly it won't work
+    ; Note that sometimes the implementation of the external functions can unintentionally modify registers. If the
+    ; Implementation seems right but its just not working, try a different register.
 
     ; Initialize stack frame
     push rbp
@@ -81,13 +97,16 @@ main:
 
     ; set size to (200, 200)
     lea rcx, [r15]
-    mov rdx, [rect]
+    mov rdx, [rectSize]
     call sfRectangleShape_setSize
 
     ; set position to (200, 200)
     lea rcx, [r15]
-    mov rdx, [rect]
+    mov rdx, [rectPos]
     call sfRectangleShape_setPosition
+
+    call sfClock_create
+    mov [clock], rax
 
 
     loop:
@@ -117,6 +136,53 @@ main:
         controlLogic:
             ; Free stack allocation from event loop
             add rsp, 32
+
+            ;calculate deltatime
+            lea rcx, [clock]
+            call sfClock_restart
+            mov rcx, rax
+            call sfTime_asSeconds
+            movss [delta], xmm0
+
+            ;calculate velocity
+
+            mov rcx, 72 ; sfKeyRight
+            call sfKeyboard_isKeyPressed
+            mov r14, rax
+
+            mov rcx, 71 ; sfKeyLeft
+            call sfKeyboard_isKeyPressed
+            sub r14, rax
+
+            cvtsi2ss xmm0, r14 ; convert to float
+
+            movss xmm1, dword [delta]
+            mulss xmm0, xmm1
+            movss xmm1, dword [speed]
+            mulss xmm0, xmm1
+            movss dword [velocity], xmm0
+
+            mov rcx, 74 ; sfKeyDown
+            call sfKeyboard_isKeyPressed
+            mov r14, rax
+
+            mov rcx, 73 ; sfKeyUp
+            call sfKeyboard_isKeyPressed
+            sub r14, rax
+
+            cvtsi2ss xmm0, r14 ; convert to float
+
+            movss xmm1, [delta]
+            mulss xmm0, xmm1
+            movss xmm1, [speed]
+            mulss xmm0, xmm1
+            movss [velocity + 4], xmm0
+
+
+            ; move rectangle
+            mov rcx, r15
+            mov rdx, [velocity]
+            call sfRectangleShape_move
 
             ; Clear the window
             lea rcx, [rbx]
