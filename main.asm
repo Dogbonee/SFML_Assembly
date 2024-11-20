@@ -5,12 +5,14 @@ section .data
 
     delta dq 0.0
     speed dd 400.0
+    ballAcceleration dd 20.0
     playerOnePos dd 0.0, 200.0
     playerTwoPos dd 1550.0, 200.0
     rectSize dd 50.0, 250.0
     ballSize dd 20.0, 20.0
     velocityOne dd 0.0, 0.0
     velocityTwo dd 0.0, 0.0
+    baseBallVelocity dd 400.0, 400.0
     ballVelocity dd 400.0, 400.0
     ballCurrentVelocity dd 0.0, 0.0
     ballPos dd 790.0, 440.0
@@ -30,6 +32,9 @@ section .bss
     playerOne resb 8
     playerTwo resb 8
     ball resb 8
+    pOneBounds resb 16
+    pTwoBounds resb 16
+    ballBounds resb 16
 
 
 section .text
@@ -51,11 +56,20 @@ extern sfRectangleShape_setFillColor ; rectangle, sfColor
 extern sfRectangleShape_setPosition ; rectangle, sfVector2f
 extern sfRectangleShape_move
 extern sfRectangleShape_getGlobalBounds
+extern sfRectangleShape_getLocalBounds
+extern sfRectangleShape_getSize
+extern sfRectangleShape_getFillColor
+extern sfRectangleShape_getTexture
+
+
+extern sfRectangleShape_getPosition
 extern sfFloatRect_intersects
 extern sfClock_create
 extern sfClock_restart
 extern sfTime_asSeconds
 extern sfKeyboard_isKeyPressed
+extern sfFloatRect
+extern sfVector2f
 
 
 
@@ -84,7 +98,6 @@ moveBall:
     mov rcx, [ball]
     mov rdx, [ballCurrentVelocity]
     call sfRectangleShape_move
-    add rsp, 8
 
     call checkBall
     leave
@@ -99,18 +112,75 @@ checkBall:
     cmp rax, 880
     jg reverseY
 
-    nextCheck:
+    paddleCheck:
+    ; Get bounds of rectangles
+    mov rcx, ballBounds
+    mov rdx, [ball]
+    call sfRectangleShape_getGlobalBounds
+    mov rcx, pOneBounds
+    mov rdx, [playerOne]
+    call sfRectangleShape_getGlobalBounds
+    mov rcx, pTwoBounds
+    mov rdx, [playerTwo]
+    call sfRectangleShape_getGlobalBounds
+
+    ; Check for intersection
+    mov rcx, ballBounds
+    mov rdx, pOneBounds
+    call sfFloatRect_intersects
+    mov r10, rax
+
+    mov rcx, ballBounds
+    mov rdx, pTwoBounds
+    call sfFloatRect_intersects
+
+    or rax, r10
+    cmp rax, 1
+    je reverseX
+
+    scoreCheck:
+    cvtss2si rax, [ballPos]
+    cmp rax, 0
+    jl resetBall
+    cmp rax, 1580
+    jg resetBall
 
     jmp checkDone
 
 
     reverseY:
+
+
+    cmp rax, 0
+    jl moveDown
+    cmp rax, 880
+    jg moveUp
+
+
+    moveDown:
+    mov rax, 0
+    jmp setPos
+    moveUp:
+    mov rax, 880
+    jmp setPos
+
+
+    setPos:
+    cvtsi2ss xmm0, rax
+    movss [ballPos + 4], xmm0
+    mov rcx, [ball]
+    mov rdx, [ballPos]
+    call sfRectangleShape_setPosition
+    jmp flip
+
+
+    flip:
     movss xmm0, [ballVelocity + 4]
     mov eax, 0x80000000
     movd xmm1, eax
     xorps xmm0, xmm1
     movss [ballVelocity + 4], xmm0
-    jmp nextCheck
+    jmp paddleCheck
 
 
     reverseX:
@@ -119,11 +189,68 @@ checkBall:
     movd xmm1, eax
     xorps xmm0, xmm1
     movss [ballVelocity], xmm0
-    jmp nextCheck
+    jmp scoreCheck
+
+    resetBall:
+    mov rcx, [windowCenter]
+    mov [ballPos], rcx
+    mov rcx, [ball]
+    mov rdx, [ballPos]
+    call sfRectangleShape_setPosition
+    mov rax, [baseBallVelocity]
+    mov [ballVelocity], rax
+
 
     checkDone:
     leave
     ret
+
+
+speedUpBall:
+    push rbp
+    mov rbp, rsp
+
+    movss xmm0, [delta]
+    movss xmm1, [ballAcceleration]
+    mulss xmm0, xmm1
+    movss xmm2, xmm0
+
+    cvtss2si rax, [ballVelocity]
+    test rax, rax
+
+    jns speedUpX
+
+    ; change sign
+    mov eax, 0x80000000
+    movd xmm1, eax
+    xorps xmm0, xmm1
+
+    speedUpX:
+    movss xmm1, [ballVelocity]
+    addss xmm1, xmm0
+    movss [ballVelocity], xmm1
+
+    ySpeed:
+    movss xmm0, xmm2
+    cvtss2si rax, [ballVelocity + 4]
+    test rax, rax
+
+    jns speedUpY
+
+    ; change sign
+    mov eax, 0x80000000
+    movd xmm1, eax
+    xorps xmm0, xmm1
+
+    speedUpY:
+    movss xmm1, [ballVelocity + 4]
+    addss xmm1, xmm0
+    movss [ballVelocity + 4], xmm1
+
+    leave
+    ret
+
+
 
 
 movePaddles:
@@ -194,7 +321,7 @@ movePaddles:
     movePlayerOne:
     ; move rectangle
     push rbp
-    mov rsp, rbp
+    mov rbp, rsp
     mov rcx, [playerOne]
     mov rdx, [velocityOne]
     call sfRectangleShape_move
@@ -361,6 +488,7 @@ main:
 
             call movePaddles
             call moveBall
+            call speedUpBall
             call render
 
             ; Check if the window is open and redo the loop if it is
