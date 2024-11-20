@@ -3,7 +3,7 @@ default rel
 
 section .data
 
-    delta dd 0.0
+    delta dq 0.0
     speed dd 400.0
     playerOnePos dd 0.0, 200.0
     playerTwoPos dd 1550.0, 200.0
@@ -11,12 +11,15 @@ section .data
     ballSize dd 20.0, 20.0
     velocityOne dd 0.0, 0.0
     velocityTwo dd 0.0, 0.0
-    ballVelocity dd 100.0, 100.0
-    ballCurrentVelocity dd 1.0, 1.0
+    ballVelocity dd 400.0, 400.0
+    ballCurrentVelocity dd 0.0, 0.0
+    ballPos dd 790.0, 440.0
+
+
     successMsg db "Exited with no errors!", 10, 0
     windowTitle db "SFML in Assembly!", 0
     windowCenter dd 790.0, 440.0 ; offset by ballsize/2 because i dont want to set origin
-    fmt db "%f", 10
+    fmt db "%d", 10, 0
 
 
 section .bss
@@ -24,6 +27,7 @@ section .bss
     playerOne resb 16
     playerTwo resb 16
     ball resb 16
+
 
 section .text
 global main
@@ -43,6 +47,8 @@ extern sfRectangleShape_setSize ; rectangle, sfVector2f
 extern sfRectangleShape_setFillColor ; rectangle, sfColor
 extern sfRectangleShape_setPosition ; rectangle, sfVector2f
 extern sfRectangleShape_move
+extern sfRectangleShape_getGlobalBounds
+extern sfFloatRect_intersects
 extern sfClock_create
 extern sfClock_restart
 extern sfTime_asSeconds
@@ -64,16 +70,57 @@ moveBall:
     movss xmm0, [ballVelocity]
     mulss xmm0, [delta]
     movss [ballCurrentVelocity], xmm0
+    movss xmm1, [ballPos]
+    addss xmm1, xmm0
+    movss [ballPos], xmm1
+
     movss xmm0, [ballVelocity + 4]
     mulss xmm0, [delta]
-
     movss [ballCurrentVelocity + 4], xmm0
-
-
+    movss xmm1, [ballPos+4]
+    addss xmm1, xmm0
+    movss [ballPos+4], xmm1
 
     mov rcx, [ball]
     mov rdx, [ballCurrentVelocity]
     call sfRectangleShape_move
+    add rsp, 8
+
+    call checkBall
+    ret
+
+checkBall:
+    sub rsp, 8
+    cvtss2si rax, [ballPos + 4]
+    cmp rax, 0
+    jl reverseY
+    cmp rax, 880
+    jg reverseY
+
+    nextCheck:
+    mov rcx, [ball]
+    ;call sfRectangleShape_getGlobalBounds
+    jmp checkDone
+
+
+    reverseY:
+    movss xmm0, [ballVelocity + 4]
+    mov eax, 0x80000000
+    movd xmm1, eax
+    xorps xmm0, xmm1
+    movss [ballVelocity + 4], xmm0
+    jmp nextCheck
+
+
+    reverseX:
+    movss xmm0, [ballVelocity]
+    mov eax, 0x80000000
+    movd xmm1, eax
+    xorps xmm0, xmm1
+    movss [ballVelocity], xmm0
+    jmp nextCheck
+
+    checkDone:
     add rsp, 8
     ret
 
@@ -300,7 +347,7 @@ main:
             add rsp, 32
 
             ;calculate deltatime
-            lea rcx, [clock]
+            mov rcx, [clock]
             call sfClock_restart
             mov rcx, rax
             call sfTime_asSeconds
@@ -308,6 +355,8 @@ main:
 
             call movePaddles
             call moveBall
+
+
             call render
 
             ; Check if the window is open and redo the loop if it is
