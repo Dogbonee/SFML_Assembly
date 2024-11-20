@@ -16,7 +16,10 @@ section .data
     ballPos dd 790.0, 440.0
 
 
+
+
     successMsg db "Exited with no errors!", 10, 0
+    videoMode dd 1600, 900, 32
     windowTitle db "SFML in Assembly!", 0
     windowCenter dd 790.0, 440.0 ; offset by ballsize/2 because i dont want to set origin
     fmt db "%d", 10, 0
@@ -24,9 +27,9 @@ section .data
 
 section .bss
     clock resb 8
-    playerOne resb 16
-    playerTwo resb 16
-    ball resb 16
+    playerOne resb 8
+    playerTwo resb 8
+    ball resb 8
 
 
 section .text
@@ -57,16 +60,13 @@ extern sfKeyboard_isKeyPressed
 
 
 %macro PRINT 1
-    push rcx
-    sub rsp, 8
     mov rcx, %1
     call printf
-    add rsp, 8
-    pop rcx
 %endmacro
 
 moveBall:
-    sub rsp, 8
+    push rbp
+    mov rbp, rsp
     movss xmm0, [ballVelocity]
     mulss xmm0, [delta]
     movss [ballCurrentVelocity], xmm0
@@ -87,10 +87,12 @@ moveBall:
     add rsp, 8
 
     call checkBall
+    leave
     ret
 
 checkBall:
-    sub rsp, 8
+    push rbp
+    mov rbp, rsp
     cvtss2si rax, [ballPos + 4]
     cmp rax, 0
     jl reverseY
@@ -98,8 +100,7 @@ checkBall:
     jg reverseY
 
     nextCheck:
-    mov rcx, [ball]
-    ;call sfRectangleShape_getGlobalBounds
+
     jmp checkDone
 
 
@@ -121,12 +122,13 @@ checkBall:
     jmp nextCheck
 
     checkDone:
-    add rsp, 8
+    leave
     ret
 
 
 movePaddles:
-    sub rsp, 8 ; align stack
+    push rbp
+    mov rbp, rsp
     ;calculate velocity
     mov rcx, 17 ; sfKeyR
     call sfKeyboard_isKeyPressed
@@ -191,6 +193,8 @@ movePaddles:
 
     movePlayerOne:
     ; move rectangle
+    push rbp
+    mov rsp, rbp
     mov rcx, [playerOne]
     mov rdx, [velocityOne]
     call sfRectangleShape_move
@@ -199,9 +203,12 @@ movePaddles:
     movss xmm1, [playerOnePos + 4]
     addss xmm1, xmm0
     movss [playerOnePos + 4], xmm1
+    leave
     ret
 
     movePlayerTwo:
+    push rbp
+    mov rbp, rsp
     mov rcx, [playerTwo]
     mov rdx, [velocityTwo]
     call sfRectangleShape_move
@@ -210,16 +217,18 @@ movePaddles:
     movss xmm1, [playerTwoPos + 4]
     addss xmm1, xmm0
     movss [playerTwoPos + 4], xmm1
+    leave
     ret
 
 
     endMove:
-    add rsp, 8 ; restore stack position
+    leave
     ret
 
 
 render:
-    sub rsp, 8 ; align the stack
+    push rbp
+    mov rbp, rsp
     ; Clear the window
     lea rcx, [rbx]
     mov rdx, 0x4B9CD300
@@ -244,7 +253,7 @@ render:
     ; Display the window
     lea rcx, [rbx]
     call sfRenderWindow_display
-    add rsp, 8 ; restore stack position
+    leave
     ret
 
 main:
@@ -262,19 +271,13 @@ main:
     push rbp
     mov rbp, rsp
 
-    sub rsp, 16; allocate 16 bytes on the stack for videomode
-
-    mov dword [rsp], 1600 ; width
-    mov dword [rsp + 4],900 ; height
-    mov dword [rsp + 8], 32 ; bits per pixel
 
     ; Registers for sfRenderWindow_create call
-    lea rcx, [rsp]
+    lea rcx, [videoMode]
     mov rdx, windowTitle
     mov r8, 7 ; sfDefaultStyle
     mov r9, 0 ; NULL
     call sfRenderWindow_create
-    add rsp, 16 ; Free create memory and stack alignment
     ; sfRenderWindow pointer now lies in rax
 
     mov rbx, rax ; rbx is in charge of storing the window.
@@ -353,10 +356,11 @@ main:
             call sfTime_asSeconds
             movss [delta], xmm0
 
+
+
+
             call movePaddles
             call moveBall
-
-
             call render
 
             ; Check if the window is open and redo the loop if it is
@@ -366,6 +370,7 @@ main:
             je loop
 
     end:
+
         ; Clean up memory
         lea rcx, [r15]
         call sfRectangleShape_destroy
@@ -374,6 +379,7 @@ main:
         call sfRenderWindow_destroy
 
         PRINT successMsg
+
 
         ; exit program with code 0
         mov rcx, 0
