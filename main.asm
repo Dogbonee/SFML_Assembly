@@ -6,8 +6,8 @@ section .data
     delta dq 0.0
     speed dd 400.0
     ballAcceleration dd 20.0
-    playerOnePos dd 0.0, 200.0
-    playerTwoPos dd 1550.0, 200.0
+    playerOnePos dd 0.0, 340.0
+    playerTwoPos dd 1550.0, 340.0
     rectSize dd 50.0, 250.0
     ballSize dd 20.0, 20.0
     velocityOne dd 0.0, 0.0
